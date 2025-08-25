@@ -2,7 +2,7 @@ import time
 import schedule
 from datetime import datetime
 import yfinance as yf
-from xml.etree.ElementTree import Element, SubElement, ElementTree
+import csv  # Changed from XML to CSV
 
 COMMODITIES = {"GC=F": "Gold", "CL=F": "Crude_Oil", "SI=F": "Silver", "NG=F": "Natural_Gas", "ZC=F": "Corn"}
 commodity_data = {ticker: [] for ticker in COMMODITIES}
@@ -31,46 +31,49 @@ def refresh_data(refresh_type):
             })
             print(f"{name}: ${price} (Prev: ${prev_close})" + (" [DAILY]" if refresh_type == "daily" else ""))
     
-    save_to_xml()  # Moved outside the loop to save once per refresh
+    save_to_csv()  # Changed from save_to_xml()
 
-def save_to_xml():
-    """Save all commodity data to XML file."""
+def save_to_csv():
+    """Save all commodity data to CSV file."""
     try:
-        root = Element('CommodityPriceData')
-        SubElement(root, 'Generated').set('timestamp', datetime.now().isoformat())
+        with open('commodity_prices.csv', 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            # Write header
+            writer.writerow(['Ticker', 'Commodity', 'Timestamp', 'RefreshType', 'CurrentPrice', 'PreviousClose'])
+            
+            # Write data
+            for ticker, data_list in commodity_data.items():
+                for data in data_list:
+                    writer.writerow([
+                        ticker,
+                        COMMODITIES[ticker],
+                        data['timestamp'].isoformat(),
+                        data['refresh_type'],
+                        data['price'],
+                        data['previous_close']
+                    ])
         
-        for ticker, data_list in commodity_data.items():
-            commodity_elem = SubElement(root, 'Commodity', {'ticker': ticker, 'name': COMMODITIES[ticker]})
-            for data in data_list:
-                price_elem = SubElement(commodity_elem, 'PriceData', {
-                    'timestamp': data['timestamp'].isoformat(),
-                    'refresh_type': data['refresh_type']
-                })
-                SubElement(price_elem, 'CurrentPrice').text = str(data['price'])
-                SubElement(price_elem, 'PreviousClose').text = str(data['previous_close'])
-        
-        ElementTree(root).write('commodity_prices.xml', encoding='utf-8', xml_declaration=True)
-        print(f"Data saved to XML at {datetime.now().strftime('%H:%M:%S')}")
+        print(f"Data saved to CSV at {datetime.now().strftime('%H:%M:%S')}")
     except Exception as e:
-        print(f"XML save error: {e}")
+        print(f"CSV save error: {e}")
 
 def load_existing_data():
-    """Load existing data from XML file."""
+    """Load existing data from CSV file."""
     try:
-        from xml.etree.ElementTree import parse
-        tree = parse('commodity_prices.xml')
-        for commodity in tree.findall('Commodity'):
-            if (ticker := commodity.get('ticker')) in commodity_data:
-                for price_data in commodity.findall('PriceData'):
+        with open('commodity_prices.csv', 'r', newline='') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                ticker = row['Ticker']
+                if ticker in commodity_data:
                     commodity_data[ticker].append({
-                        'timestamp': datetime.fromisoformat(price_data.get('timestamp')),
-                        'price': float(price_data.find('CurrentPrice').text),
-                        'previous_close': float(price_data.find('PreviousClose').text),
-                        'refresh_type': price_data.get('refresh_type')
+                        'timestamp': datetime.fromisoformat(row['Timestamp']),
+                        'price': float(row['CurrentPrice']),
+                        'previous_close': float(row['PreviousClose']),
+                        'refresh_type': row['RefreshType']
                     })
-        print("Loaded existing data from XML")
+        print("Loaded existing data from CSV")
     except FileNotFoundError:
-        print("No existing XML file found, starting fresh")
+        print("No existing CSV file found, starting fresh")
     except Exception as e:
         print(f"Error loading data: {e}")
 
@@ -91,7 +94,7 @@ def main():
             schedule.run_pending()
             time.sleep(60)
     except KeyboardInterrupt:
-        save_to_xml()
+        save_to_csv()  # Changed from save_to_xml()
         print("\nPipeline stopped. Final data saved.")
 
 if __name__ == "__main__":
